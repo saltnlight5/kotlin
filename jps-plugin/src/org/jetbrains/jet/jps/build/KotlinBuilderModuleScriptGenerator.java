@@ -53,7 +53,8 @@ public class KotlinBuilderModuleScriptGenerator {
                 sourceFiles,
                 target.isTests(),
                 // this excludes the output directory from the class path, to be removed for true incremental compilation
-                Collections.singleton(target.getOutputDir())
+                //Collections.singleton(target.getOutputDir())
+                Collections.<File>emptySet()
         );
 
         File scriptFile = new File(target.getOutputDir(), "script.kts");

@@ -72,8 +72,8 @@ public class KotlinBuilder extends ModuleLevelBuilder {
         ModuleBuildTarget representativeTarget = chunk.representativeTarget();
 
         // For non-incremental build: take all sources
-        List<File> sourceFiles = KotlinSourceFileCollector.getAllKotlinSourceFiles(representativeTarget);
-        //List<File> sourceFiles = getDirtySourceFiles(dirtyFilesHolder);
+        //List<File> sourceFiles = KotlinSourceFileCollector.getAllKotlinSourceFiles(representativeTarget);
+        List<File> sourceFiles = KotlinSourceFileCollector.getDirtySourceFiles(dirtyFilesHolder);
 
         if (sourceFiles.isEmpty()) {
             return ExitCode.NOTHING_DONE;
