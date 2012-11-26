@@ -32,29 +32,32 @@ import org.jetbrains.jps.model.java.JpsJavaDependenciesEnumerator;
 import org.jetbrains.jps.model.java.JpsJavaExtensionService;
 import org.jetbrains.jps.model.library.JpsLibrary;
 import org.jetbrains.jps.model.library.JpsLibraryRoot;
-import org.jetbrains.jps.model.module.*;
+import org.jetbrains.jps.model.module.JpsDependencyElement;
+import org.jetbrains.jps.model.module.JpsLibraryDependency;
+import org.jetbrains.jps.model.module.JpsModule;
+import org.jetbrains.jps.model.module.JpsSdkDependency;
 import org.jetbrains.jps.util.JpsPathUtil;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 
 import static org.jetbrains.jet.compiler.runner.KotlinModuleScriptGenerator.DependencyProvider;
 
 public class KotlinBuilderModuleScriptGenerator {
-    public static File generateModuleScript(CompileContext context, ModuleBuildTarget target, List<File> sourceFiles)
-            throws IOException
-    {
+    public static File generateModuleScript(
+            CompileContext context,
+            ModuleBuildTarget target,
+            List<File> sourceFiles,
+            Incrementality incrementality
+    ) throws IOException {
         CharSequence moduleScriptText = KotlinModuleScriptGenerator.generateModuleScript(
                 target.getId(),
                 getKotlinModuleDependencies(context, target),
                 sourceFiles,
                 target.isTests(),
-                // this excludes the output directory from the class path, to be removed for true incremental compilation
-                //Collections.singleton(target.getOutputDir())
-                Collections.<File>emptySet()
+                incrementality.getExcludedClasspathDirectories(target)
         );
 
         File scriptFile = new File(target.getOutputDir(), "script.kts");

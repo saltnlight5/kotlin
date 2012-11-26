@@ -32,6 +32,7 @@ import org.jetbrains.jps.incremental.messages.CompilerMessage;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.Collection;
 import java.util.List;
 
@@ -39,8 +40,9 @@ import static org.jetbrains.jet.cli.common.messages.CompilerMessageSeverity.ERRO
 import static org.jetbrains.jet.cli.common.messages.CompilerMessageSeverity.EXCEPTION;
 
 public class KotlinBuilder extends ModuleLevelBuilder {
-
     private static final String KOTLIN_BUILDER_NAME = "Kotlin Builder";
+
+    private static final Incrementality INCREMENTALITY = Incrementality.INCREMENTAL;
 
     protected KotlinBuilder() {
         super(BuilderCategory.SOURCE_PROCESSOR);
@@ -71,15 +73,13 @@ public class KotlinBuilder extends ModuleLevelBuilder {
 
         ModuleBuildTarget representativeTarget = chunk.representativeTarget();
 
-        // For non-incremental build: take all sources
-        //List<File> sourceFiles = KotlinSourceFileCollector.getAllKotlinSourceFiles(representativeTarget);
-        List<File> sourceFiles = KotlinSourceFileCollector.getDirtySourceFiles(dirtyFilesHolder);
+        List<File> sourceFiles = INCREMENTALITY.getSourcesToCompile(representativeTarget, dirtyFilesHolder);
 
         if (sourceFiles.isEmpty()) {
             return ExitCode.NOTHING_DONE;
         }
 
-        File scriptFile = KotlinBuilderModuleScriptGenerator.generateModuleScript(context, representativeTarget, sourceFiles);
+        File scriptFile = KotlinBuilderModuleScriptGenerator.generateModuleScript(context, representativeTarget, sourceFiles, INCREMENTALITY);
 
         File outputDir = representativeTarget.getOutputDir();
 
@@ -107,7 +107,30 @@ public class KotlinBuilder extends ModuleLevelBuilder {
                     paths(outputItem.getSourceFiles()));
         }
 
+        log(representativeTarget, outputItemCollector);
+
         return ExitCode.OK;
+    }
+
+    private static void log(ModuleBuildTarget representativeTarget, OutputItemsCollectorImpl outputItemCollector) throws IOException {
+        File logFile = new File(representativeTarget.getOutputDir(), "log.txt");
+        PrintStream log = new PrintStream(logFile);
+
+        try {
+            for (SimpleOutputItem outputItem : outputItemCollector.getOutputs()) {
+                log.println("-----------------------");
+                log.println(outputItem.getOutputFile());
+                for (File file : outputItem.getSourceFiles()) {
+                    log.println("    " + file);
+                }
+                log.println();
+                log.println();
+            }
+        }
+        finally {
+            log.close();
+        }
+
     }
 
     private static Collection<String> paths(Collection<File> files) {
