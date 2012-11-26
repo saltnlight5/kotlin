@@ -67,7 +67,7 @@ public class LazyResolveTestUtil {
     public static InjectorForTopDownAnalyzer createInjectorForTDA(ModuleDescriptor module, JetCoreEnvironment environment) {
         TopDownAnalysisParameters params = new TopDownAnalysisParameters(
                 Predicates.<PsiFile>alwaysTrue(), false, false, Collections.<AnalyzerScriptParameter>emptyList());
-        return new InjectorForTopDownAnalyzerForJvm(environment.getProject(), params, new BindingTraceContext(), module);
+        return new InjectorForTopDownAnalyzerForJvm(environment.getProject(), params, new BindingTraceContext(), module/*, ModuleDescriptorProviderFactory.createDefaultModuleDescriptorProvider(environment.getProject())*/);
     }
 
     public static ModuleDescriptor resolveEagerly(List<JetFile> files, JetCoreEnvironment environment) {

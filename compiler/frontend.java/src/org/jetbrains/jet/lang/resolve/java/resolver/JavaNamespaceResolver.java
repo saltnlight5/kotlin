@@ -17,9 +17,10 @@
 package org.jetbrains.jet.lang.resolve.java.resolver;
 
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiPackage;
+import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jet.lang.descriptors.ModuleDescriptor;
@@ -28,7 +29,7 @@ import org.jetbrains.jet.lang.descriptors.NamespaceDescriptorParent;
 import org.jetbrains.jet.lang.descriptors.annotations.AnnotationDescriptor;
 import org.jetbrains.jet.lang.resolve.BindingContext;
 import org.jetbrains.jet.lang.resolve.BindingTrace;
-import org.jetbrains.jet.lang.resolve.DescriptorUtils;
+import org.jetbrains.jet.lang.resolve.ModuleDescriptorProvider;
 import org.jetbrains.jet.lang.resolve.java.*;
 import org.jetbrains.jet.lang.resolve.java.descriptor.JavaNamespaceDescriptor;
 import org.jetbrains.jet.lang.resolve.java.scope.JavaBaseScope;
@@ -39,24 +40,42 @@ import org.jetbrains.jet.lang.resolve.name.FqName;
 import org.jetbrains.jet.lang.resolve.name.Name;
 
 import javax.inject.Inject;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static org.jetbrains.jet.lang.resolve.java.provider.PsiDeclarationProviderFactory.*;
 
 public final class JavaNamespaceResolver {
 
     @NotNull
-    private static final ModuleDescriptor FAKE_ROOT_MODULE = new ModuleDescriptor(JavaDescriptorResolver.JAVA_ROOT);
+    public static final ModuleDescriptor FAKE_ROOT_MODULE = new ModuleDescriptor(JavaDescriptorResolver.JAVA_ROOT);
     @NotNull
-    private final Map<FqName, JavaBaseScope> resolvedNamespaceCache = Maps.newHashMap();
+    public static final ModuleDescriptorProvider FAKE_ROOT_MODULE_PROVIDER = new ModuleDescriptorProvider() {
+        @NotNull
+        @Override
+        public ModuleDescriptor getModule(@NotNull VirtualFile file) {
+            return FAKE_ROOT_MODULE;
+        }
+
+        @NotNull
+        @Override
+        public Collection<ModuleDescriptor> getAllModules() {
+            return Collections.singletonList(FAKE_ROOT_MODULE);
+        }
+
+        @NotNull
+        @Override
+        public GlobalSearchScope getSearchScopeForModule(@NotNull ModuleDescriptor descriptor) {
+            throw new UnsupportedOperationException("#getSearchScopeForModule");
+        }
+    };
+
     @NotNull
-    private final Set<FqName> unresolvedCache = Sets.newHashSet();
+    private final Map<FqName, Map<ModuleDescriptor, NamespaceDescriptor>> cache = Maps.newHashMap();
 
     private PsiClassFinder psiClassFinder;
     private BindingTrace trace;
     private JavaSemanticServices javaSemanticServices;
+    private ModuleDescriptorProvider moduleDescriptorProvider;
 
     public JavaNamespaceResolver() {
     }
@@ -76,23 +95,55 @@ public final class JavaNamespaceResolver {
         this.javaSemanticServices = javaSemanticServices;
     }
 
+    @Inject
+    public void setModuleDescriptorProvider(ModuleDescriptorProvider moduleDescriptorProvider) {
+        this.moduleDescriptorProvider = moduleDescriptorProvider;
+    }
+
+
     @Nullable
-    public NamespaceDescriptor resolveNamespace(@NotNull FqName qualifiedName, @NotNull DescriptorSearchRule searchRule) {
+    public NamespaceDescriptor resolveNamespace(
+            @NotNull FqName qualifiedName,
+            @NotNull ModuleDescriptor parentModule,
+            @NotNull DescriptorSearchRule searchRule
+    ) {
+        Map<ModuleDescriptor, NamespaceDescriptor> map = resolveNamespace(qualifiedName, searchRule);
+        return map.get(parentModule);
+    }
+
+    @NotNull
+    public Map<ModuleDescriptor, NamespaceDescriptor> resolveNamespace(
+            @NotNull FqName fqName,
+            @NotNull DescriptorSearchRule searchRule
+    ) {
+        Map<ModuleDescriptor, NamespaceDescriptor> cachedResult = cache.get(fqName);
+        if (cachedResult != null) {
+            return cachedResult;
+        }
+        Map<ModuleDescriptor, NamespaceDescriptor> result = new HashMap<ModuleDescriptor, NamespaceDescriptor>();
+        for (ModuleDescriptor moduleDescriptor : moduleDescriptorProvider.getAllModules()) {
+            NamespaceDescriptor resolvedNamespace = doResolveNamespace(fqName, moduleDescriptor, searchRule);
+            if (resolvedNamespace != null) {
+                result.put(moduleDescriptor, resolvedNamespace);
+            }
+        }
+        cache.put(fqName, cachedResult);
+        return result;
+    }
+
+    @Nullable
+    private NamespaceDescriptor doResolveNamespace(
+            @NotNull FqName fqName,
+            @NotNull ModuleDescriptor parentModule,
+            @NotNull DescriptorSearchRule searchRule
+    ) {
         // First, let's check that there is no Kotlin package:
-        NamespaceDescriptor kotlinNamespaceDescriptor = javaSemanticServices.getKotlinNamespaceDescriptor(qualifiedName);
+        NamespaceDescriptor kotlinNamespaceDescriptor = javaSemanticServices.getKotlinNamespaceDescriptor(fqName);
         if (kotlinNamespaceDescriptor != null) {
             return searchRule.processFoundInKotlin(kotlinNamespaceDescriptor);
         }
 
-        if (unresolvedCache.contains(qualifiedName)) {
-            return null;
-        }
-        JavaBaseScope scope = resolvedNamespaceCache.get(qualifiedName);
-        if (scope != null) {
-            return (NamespaceDescriptor) scope.getContainingDeclaration();
-        }
-
-        NamespaceDescriptorParent parentNs = resolveParentNamespace(qualifiedName);
+        NamespaceDescriptorParent parentNs = resolveParentNamespace(fqName, parentModule);
         if (parentNs == null) {
             return null;
         }
@@ -100,10 +151,10 @@ public final class JavaNamespaceResolver {
         JavaNamespaceDescriptor javaNamespaceDescriptor = new JavaNamespaceDescriptor(
                 parentNs,
                 Collections.<AnnotationDescriptor>emptyList(), // TODO
-                qualifiedName
+                fqName
         );
 
-        JavaBaseScope newScope = createNamespaceScope(qualifiedName, javaNamespaceDescriptor);
+        JavaBaseScope newScope = createNamespaceScope(fqName, javaNamespaceDescriptor, parentModule);
         if (newScope == null) {
             return null;
         }
@@ -116,34 +167,20 @@ public final class JavaNamespaceResolver {
     }
 
     @Nullable
-    public NamespaceDescriptor resolveNamespace(@NotNull FqName qualifiedName) {
-        return resolveNamespace(qualifiedName, DescriptorSearchRule.ERROR_IF_FOUND_IN_KOTLIN);
-    }
-
-    @Nullable
-    private NamespaceDescriptorParent resolveParentNamespace(@NotNull FqName fqName) {
+    private NamespaceDescriptorParent resolveParentNamespace(@NotNull FqName fqName, @NotNull ModuleDescriptor parentModule) {
         if (fqName.isRoot()) {
-            return FAKE_ROOT_MODULE;
+            return parentModule;
         }
         else {
-            return resolveNamespace(fqName.parent(), DescriptorSearchRule.INCLUDE_KOTLIN);
+            return doResolveNamespace(fqName.parent(), parentModule, DescriptorSearchRule.INCLUDE_KOTLIN);
         }
     }
 
     @Nullable
     private JavaBaseScope createNamespaceScope(
             @NotNull FqName fqName,
-            @NotNull NamespaceDescriptor namespaceDescriptor
-    ) {
-        JavaBaseScope namespaceScope = doCreateNamespaceScope(fqName, namespaceDescriptor);
-        cache(fqName, namespaceScope);
-        return namespaceScope;
-    }
-
-    @Nullable
-    private JavaBaseScope doCreateNamespaceScope(
-            @NotNull FqName fqName,
-            @NotNull NamespaceDescriptor namespaceDescriptor
+            @NotNull NamespaceDescriptor namespaceDescriptor,
+            @NotNull ModuleDescriptor parentModule
     ) {
         PsiPackage psiPackage = psiClassFinder.findPsiPackage(fqName);
         if (psiPackage != null) {
@@ -151,11 +188,17 @@ public final class JavaNamespaceResolver {
             trace.record(JavaBindingContext.JAVA_NAMESPACE_KIND, namespaceDescriptor, JavaNamespaceKind.PROPER);
             if (psiClass == null) {
                 return new JavaPackageScopeWithoutMembers(namespaceDescriptor,
-                                                          createDeclarationProviderForNamespaceWithoutMembers(psiPackage),
-                                                          fqName, javaSemanticServices.getDescriptorResolver());
+                                                          createDeclarationProviderForNamespaceWithoutMembers(psiPackage,
+                                                                                                              moduleDescriptorProvider
+                                                                                                                      .getSearchScopeForModule(
+                                                                                                                              parentModule)),
+                                                          fqName,
+                                                          FAKE_ROOT_MODULE,
+                                                          javaSemanticServices.getDescriptorResolver());
             }
             return new JavaScopeForKotlinNamespace(namespaceDescriptor,
-                                                   createDeclarationForKotlinNamespace(psiPackage, psiClass),
+                                                   createDeclarationForKotlinNamespace(psiPackage, psiClass, moduleDescriptorProvider
+                                                           .getSearchScopeForModule(parentModule)),
                                                    fqName, javaSemanticServices.getDescriptorResolver());
         }
 
@@ -174,31 +217,31 @@ public final class JavaNamespaceResolver {
                                                fqName, javaSemanticServices.getDescriptorResolver());
     }
 
-    private void cache(@NotNull FqName fqName, @Nullable JavaBaseScope packageScope) {
-        if (packageScope == null) {
-            unresolvedCache.add(fqName);
-            return;
-        }
-        JavaBaseScope oldValue = resolvedNamespaceCache.put(fqName, packageScope);
-        if (oldValue != null) {
-            throw new IllegalStateException("rewrite at " + fqName);
-        }
-    }
-
-    @Nullable
-    public JavaBaseScope getJavaPackageScopeForExistingNamespaceDescriptor(@NotNull NamespaceDescriptor namespaceDescriptor) {
-        FqName fqName = DescriptorUtils.getFQName(namespaceDescriptor).toSafe();
-        if (unresolvedCache.contains(fqName)) {
-            throw new IllegalStateException(
-                    "This means that we are trying to create a Java package, but have a package with the same FQN defined in Kotlin: " +
-                    fqName);
-        }
-        JavaBaseScope alreadyResolvedScope = resolvedNamespaceCache.get(fqName);
-        if (alreadyResolvedScope != null) {
-            return alreadyResolvedScope;
-        }
-        return createNamespaceScope(fqName, namespaceDescriptor);
-    }
+    //private void cache(@NotNull FqName fqName, @Nullable JavaBaseScope packageScope) {
+    //    if (packageScope == null) {
+    //        unresolvedCache.add(fqName);
+    //        return;
+    //    }
+    //    JavaBaseScope oldValue = cache.put(fqName, packageScope);
+    //    if (oldValue != null) {
+    //        throw new IllegalStateException("rewrite at " + fqName);
+    //    }
+    //}
+    //
+    //@Nullable
+    //public JavaBaseScope getJavaPackageScopeForExistingNamespaceDescriptor(@NotNull NamespaceDescriptor namespaceDescriptor) {
+    //    FqName fqName = DescriptorUtils.getFQName(namespaceDescriptor).toSafe();
+    //    if (unresolvedCache.contains(fqName)) {
+    //        throw new IllegalStateException(
+    //                "This means that we are trying to create a Java package, but have a package with the same FQN defined in Kotlin: " +
+    //                fqName);
+    //    }
+    //    JavaBaseScope alreadyResolvedScope = cache.get(fqName);
+    //    if (alreadyResolvedScope != null) {
+    //        return alreadyResolvedScope;
+    //    }
+    //    return createNamespaceScope(fqName, namespaceDescriptor);
+    //}
 
     @Nullable
     private PsiClass getPsiClassForJavaPackageScope(@NotNull FqName packageFQN) {

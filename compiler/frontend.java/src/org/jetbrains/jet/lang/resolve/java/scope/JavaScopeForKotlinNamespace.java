@@ -22,6 +22,7 @@ import org.jetbrains.jet.lang.descriptors.FunctionDescriptor;
 import org.jetbrains.jet.lang.descriptors.NamespaceDescriptor;
 import org.jetbrains.jet.lang.resolve.java.JavaDescriptorResolver;
 import org.jetbrains.jet.lang.resolve.java.provider.KotlinNamespacePsiDeclarationProvider;
+import org.jetbrains.jet.lang.resolve.java.resolver.JavaNamespaceResolver;
 import org.jetbrains.jet.lang.resolve.name.FqName;
 import org.jetbrains.jet.lang.resolve.name.Name;
 
@@ -38,7 +39,7 @@ public final class JavaScopeForKotlinNamespace extends JavaPackageScope {
             @NotNull FqName packageFQN,
             @NotNull JavaDescriptorResolver descriptorResolver
     ) {
-        super(descriptor, declarationProvider, packageFQN, descriptorResolver);
+        super(descriptor, declarationProvider, packageFQN, JavaNamespaceResolver.FAKE_ROOT_MODULE_PROVIDER.getModule(declarationProvider.getPsiClass().getContainingFile().getVirtualFile()), descriptorResolver);
         this.declarationProvider = declarationProvider;
     }
 

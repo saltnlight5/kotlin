@@ -41,6 +41,7 @@ import org.jetbrains.jet.lang.resolve.BindingContext;
 import org.jetbrains.jet.lang.resolve.java.AnalyzerFacadeForJVM;
 import org.jetbrains.jet.lang.resolve.java.DescriptorSearchRule;
 import org.jetbrains.jet.lang.resolve.java.JavaDescriptorResolver;
+import org.jetbrains.jet.lang.resolve.java.resolver.JavaNamespaceResolver;
 import org.jetbrains.jet.lang.resolve.name.FqName;
 import org.jetbrains.jet.lang.resolve.name.Name;
 
@@ -104,7 +105,7 @@ public final class LoadDescriptorUtil {
         InjectorForJavaSemanticServices injector = new InjectorForJavaSemanticServices(jetCoreEnvironment.getProject());
         JavaDescriptorResolver javaDescriptorResolver = injector.getJavaDescriptorResolver();
         NamespaceDescriptor namespaceDescriptor =
-                javaDescriptorResolver.resolveNamespace(TEST_PACKAGE_FQNAME, DescriptorSearchRule.ERROR_IF_FOUND_IN_KOTLIN);
+                javaDescriptorResolver.resolveNamespace(TEST_PACKAGE_FQNAME, JavaNamespaceResolver.FAKE_ROOT_MODULE, DescriptorSearchRule.ERROR_IF_FOUND_IN_KOTLIN);
         assert namespaceDescriptor != null;
         return Pair.create(namespaceDescriptor, injector.getBindingTrace().getBindingContext());
     }

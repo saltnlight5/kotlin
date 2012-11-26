@@ -16,6 +16,9 @@
 
 package org.jetbrains.jet.lang.resolve.java;
 
+import com.google.common.base.Function;
+import com.google.common.collect.Collections2;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jet.lang.descriptors.*;
@@ -23,8 +26,10 @@ import org.jetbrains.jet.lang.resolve.DescriptorUtils;
 import org.jetbrains.jet.lang.resolve.java.provider.ClassPsiDeclarationProvider;
 import org.jetbrains.jet.lang.resolve.java.provider.PsiDeclarationProvider;
 import org.jetbrains.jet.lang.resolve.java.resolver.*;
+import org.jetbrains.jet.lang.resolve.java.scope.JavaBaseScope;
 import org.jetbrains.jet.lang.resolve.name.FqName;
 import org.jetbrains.jet.lang.resolve.name.Name;
+import org.jetbrains.jet.lang.resolve.scopes.ChainedScope;
 import org.jetbrains.jet.lang.resolve.scopes.JetScope;
 import org.jetbrains.jet.lang.types.DependencyClassByQualifiedNameResolver;
 import org.jetbrains.jet.lang.types.JetType;
@@ -32,7 +37,12 @@ import org.jetbrains.jet.lang.types.JetType;
 import javax.inject.Inject;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+
+import static org.jetbrains.jet.lang.resolve.java.DescriptorSearchRule.ERROR_IF_FOUND_IN_KOTLIN;
+import static org.jetbrains.jet.lang.resolve.java.DescriptorSearchRule.IGNORE_IF_FOUND_IN_KOTLIN;
+import static org.jetbrains.jet.lang.resolve.java.resolver.JavaNamespaceResolver.FAKE_ROOT_MODULE;
 
 /**
  * @author abreslav
@@ -113,18 +123,33 @@ public class JavaDescriptorResolver implements DependencyClassByQualifiedNameRes
     }
 
     @Nullable
-    public NamespaceDescriptor resolveNamespace(@NotNull FqName qualifiedName, @NotNull DescriptorSearchRule searchRule) {
-        return namespaceResolver.resolveNamespace(qualifiedName, searchRule);
+    public NamespaceDescriptor resolveNamespace(
+            @NotNull FqName qualifiedName,
+            @NotNull ModuleDescriptor parentModule,
+            @NotNull DescriptorSearchRule searchRule) {
+        return namespaceResolver.resolveNamespace(qualifiedName, parentModule, searchRule);
     }
 
     @Override
     public NamespaceDescriptor resolveNamespace(@NotNull FqName qualifiedName) {
-        return namespaceResolver.resolveNamespace(qualifiedName);
+        return resolveNamespace(qualifiedName, FAKE_ROOT_MODULE, ERROR_IF_FOUND_IN_KOTLIN);
     }
 
     @Nullable
     public JetScope getJavaPackageScope(@NotNull NamespaceDescriptor namespaceDescriptor) {
-        return namespaceResolver.getJavaPackageScopeForExistingNamespaceDescriptor(namespaceDescriptor);
+        //TODO: search rule
+        Map<ModuleDescriptor, NamespaceDescriptor> map =
+                namespaceResolver.resolveNamespace(DescriptorUtils.getFQName(namespaceDescriptor).toSafe(), IGNORE_IF_FOUND_IN_KOTLIN);
+        if (map.isEmpty()) {
+            return null;
+        }
+        Collection<JetScope> scopes = Collections2.transform(map.values(), new Function<NamespaceDescriptor, JetScope>() {
+            @Override
+            public JetScope apply(@Nullable NamespaceDescriptor namespace) {
+                return namespace.getMemberScope();
+            }
+        });
+        return new ChainedScope(map.keySet().iterator().next(), scopes.toArray(new JetScope[scopes.size()]));
     }
 
     @NotNull

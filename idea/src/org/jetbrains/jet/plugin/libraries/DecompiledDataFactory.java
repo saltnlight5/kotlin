@@ -37,6 +37,7 @@ import org.jetbrains.jet.lang.resolve.java.JavaDescriptorResolver;
 import org.jetbrains.jet.lang.resolve.java.JvmAbi;
 import org.jetbrains.jet.lang.resolve.java.JvmStdlibNames;
 import org.jetbrains.jet.lang.resolve.java.kt.JetClassAnnotation;
+import org.jetbrains.jet.lang.resolve.java.resolver.JavaNamespaceResolver;
 import org.jetbrains.jet.lang.resolve.name.FqName;
 import org.jetbrains.jet.resolve.DescriptorRenderer;
 
@@ -85,7 +86,9 @@ public class DecompiledDataFactory {
         PsiClass psiClass = clsFile.getClasses()[0];
 
         if (isKotlinNamespaceClass(psiClass)) {
-            NamespaceDescriptor nd = javaDescriptorResolver.resolveNamespace(new FqName(packageName), DescriptorSearchRule.INCLUDE_KOTLIN);
+            NamespaceDescriptor nd = javaDescriptorResolver.resolveNamespace(new FqName(packageName),
+                                                                             JavaNamespaceResolver.FAKE_ROOT_MODULE,
+                                                                             DescriptorSearchRule.INCLUDE_KOTLIN);
 
             if (nd != null) {
                 for (DeclarationDescriptor member : sortDeclarations(nd.getMemberScope().getAllDescriptors())) {

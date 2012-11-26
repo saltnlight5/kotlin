@@ -27,6 +27,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.jet.lang.resolve.TopDownAnalysisParameters;
 import org.jetbrains.jet.lang.resolve.BindingTrace;
 import org.jetbrains.jet.lang.descriptors.ModuleDescriptor;
+import org.jetbrains.jet.lang.resolve.ModuleDescriptorProvider;
 import org.jetbrains.jet.lang.ModuleConfiguration;
 import org.jetbrains.jet.lang.resolve.java.JavaBridgeConfiguration;
 import org.jetbrains.jet.lang.resolve.java.JavaDescriptorResolver;
@@ -76,6 +77,7 @@ public class InjectorForTopDownAnalyzerForJvm implements InjectorForTopDownAnaly
     private final TopDownAnalysisParameters topDownAnalysisParameters;
     private final BindingTrace bindingTrace;
     private final ModuleDescriptor moduleDescriptor;
+    private ModuleDescriptorProvider moduleDescriptorProvider;
     private JavaBridgeConfiguration moduleConfiguration;
     private JavaDescriptorResolver javaDescriptorResolver;
     private PsiClassFinderImpl psiClassFinder;
@@ -125,6 +127,7 @@ public class InjectorForTopDownAnalyzerForJvm implements InjectorForTopDownAnaly
         this.topDownAnalysisParameters = topDownAnalysisParameters;
         this.bindingTrace = bindingTrace;
         this.moduleDescriptor = moduleDescriptor;
+        this.moduleDescriptorProvider = org.jetbrains.jet.lang.resolve.ModuleDescriptorProviderFactory.createDefaultModuleDescriptorProvider(project);
         this.moduleConfiguration = new JavaBridgeConfiguration();
         this.javaDescriptorResolver = new JavaDescriptorResolver();
         this.psiClassFinder = new PsiClassFinderImpl();
@@ -298,6 +301,7 @@ public class InjectorForTopDownAnalyzerForJvm implements InjectorForTopDownAnaly
         javaSupertypeResolver.setTypeTransformer(javaTypeTransformer);
 
         javaNamespaceResolver.setJavaSemanticServices(javaSemanticServices);
+        javaNamespaceResolver.setModuleDescriptorProvider(moduleDescriptorProvider);
         javaNamespaceResolver.setPsiClassFinder(psiClassFinder);
         javaNamespaceResolver.setTrace(bindingTrace);
 
